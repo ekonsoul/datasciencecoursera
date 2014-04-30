@@ -34,7 +34,7 @@ makeCacheMatrix <- function(x = matrix()) {
 # created with the above function. However, it first checks to see if the
 # inverse has already been calculated. If so, it `get`s the inverse from the
 # cache and skips the computation. Otherwise, it calculates the inverse of
-# the data and sets the value of the inverse in the cache via the `setinverse`
+# the given matrix x and sets the value of the inverse in the cache via the `setinverse`
 # function.
 cacheSolve <- function(x, ...) {
   ## Return a matrix that is the inverse of 'x'
@@ -44,8 +44,8 @@ cacheSolve <- function(x, ...) {
     message("getting cached inverse matrix")
     return(inv_matrix)
   }
-  x <- x$get()    # Get the matrix x to be inverted.
-  inv_matrix <- solve(x)   # Invert matrix x and assign the value of the inverse to m.
+  x1 <- x$get()    # Get the matrix x to be inverted.
+  inv_matrix <- solve(x1)   # Invert matrix x and assign the value of the inverse to m.
   x$setinverse(inv_matrix) # Cache (store) the inverse matrix 'inv_matrix'.
   inv_matrix
   
