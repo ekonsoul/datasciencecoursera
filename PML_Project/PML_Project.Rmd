@@ -1,0 +1,147 @@
+---
+title: "Practical Machine Learning Course Project"
+---
+#### Summary
+  In this project we are asked to infer about the quality of physical exercise execution by a group of individuals who performed several activities correctly and incorrectly in 5 different ways. A group of enthusiasts took measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. Our goal is be to use data from accelerometers on the belt, forearm, arm, and dumbell to build prediction models using Machine Learning algorithms, in order to predict the manner in which they executed each task.
+
+#### Load Necessary Libraries:
+```{r results="hide"}
+library(caret)
+library(knitr)
+set.seed(12345)
+```
+
+#### Load the Project Data.
+```{r}
+training_raw <- read.csv("pml-training.csv", header = TRUE)
+ testing_raw <- read.csv("pml-testing.csv", header = TRUE)
+```
+
+Define Sparsity Detection functions:
+```{r}
+# This function returns the fraction of the NA entries
+sparse_detector1 <- function(VarVector){
+    L <- length(VarVector)
+    na.count <- sum(is.na(VarVector))
+    return((L - na.count)/L)
+}
+
+# This function returns the fraction of empty cells
+sparse_detector2 <- function(VarVector){
+    L <- length(VarVector)
+    novalue.count <- sum(VarVector=="")
+    return((L - novalue.count)/L)
+}
+
+# Diagnose Sparsity of input variables on training subset
+sparse_vars1 <- apply(training_raw, 2, sparse_detector1)
+sparse_vars2 <- apply(training_raw, 2, sparse_detector2)
+
+# Trim the training dataset by removing sparse variables
+training_trimmed <- training_raw[, sparse_vars1 > 0.5 & sparse_vars2 > 0.5]
+
+# Trim the testing dataset by removing sparse variables
+testing_trimmed <- testing_raw[, sparse_vars1 > 0.5 & sparse_vars2 > 0.5]
+```
+
+Detect the Variables of Zero or Near Zero Variance
+```{r}
+NZV_detect <- nearZeroVar(training_trimmed, saveMetrics=TRUE)
+training_trimmed <- training_trimmed[!NZV_detect$nzv]
+ testing_trimmed <-  testing_trimmed[!NZV_detect$nzv]
+```
+
+Next, remove labelling/time tagging variables (columns 1 to 6): 
+```{r}
+training_trimmed <- training_trimmed[, -c(1:6)]
+ testing_trimmed <-  testing_trimmed[, -c(1:6)]
+```
+
+#### Data Pre-Processing (Transformation).
+We can reduce even further the number of important variables by use of
+Principal Component Analysis (PCA). Find the necessary principal components
+to capture 95% of the variance:
+```{r}
+principal_components <- preProcess(training_trimmed[,-53],method="pca",thresh = 0.95)
+```
+
+Now we can transform (project) our trimmed data to the principal components:
+```{r}
+training_Transformed <- predict(principal_components, training_trimmed[,-53])
+training_Transformed$classe <- training_trimmed$classe 
+
+testing_Transformed <- predict(principal_components,  testing_trimmed[,-53])
+```
+
+Divide the training data into two subsets. The first one will be used for
+training and the other will be used for cross-validation in order to assess
+the Out-Of-Sample Error via the estimated Accuracy of each model.
+```{r}
+inTrain <- createDataPartition(y = training_Transformed$classe, p = 0.85, list = FALSE)
+training_sub <- training_Transformed[ inTrain ,]
+cross_val    <- training_Transformed[-inTrain ,]
+```
+
+#### Fitting ML Models and Cross-Validation of Training Quality
+Finally, the data are ready for processing with Machine Learning algorithms.
+We will use random forests, support vector machines (SVM), k-nearest neighbors (k-NN) 
+and boosted trees (GBM):
+```{r}
+ cv_ctrl_par <- trainControl(method = "cv", number = 5, allowParallel = TRUE, verboseIter=FALSE)
+
+ model_rf  <- train(classe ~ ., data=training_sub, method="rf", trControl=cv_ctrl_par)
+
+ model_svm <- train(classe ~ ., data=training_sub, method="svmRadial", trControl=cv_ctrl_par)
+
+ model_knn <- train(classe ~ ., data=training_sub, method="knn", trControl=cv_ctrl_par)
+
+ model_gbm <- train(classe ~ ., data=training_sub, method="gbm", trControl=cv_ctrl_par)
+```
+
+Estimate the Out-Of-Sample Error using the following predictions on the
+just created cross-validation test set:
+
+Predict on the artificial testing set using all models:
+```{r}
+pred_cross_val_rf  <- predict(model_rf,  cross_val[-26]);
+pred_cross_val_gbm <- predict(model_gbm, cross_val[-26]);
+pred_cross_val_svm <- predict(model_svm, cross_val[-26]);
+pred_cross_val_knn <- predict(model_knn, cross_val[-26]);
+
+CM_rf  <- confusionMatrix(cross_val$classe, pred_cross_val_rf)
+CM_gbm <- confusionMatrix(cross_val$classe, pred_cross_val_gbm)
+CM_svm <- confusionMatrix(cross_val$classe, pred_cross_val_svm)
+CM_knn <- confusionMatrix(cross_val$classe, pred_cross_val_knn)
+
+AccuracyTable <- c(CM_rf$overall[[1]],CM_knn$overall[[1]],CM_svm$overall[[1]],
+                   CM_gbm$overall[[1]]);
+names(AccuracyTable) <- c("Random Forrest", "KNN", "SVM", "GBM")
+
+# We see that the Random Forest method is the most accurate as expected.
+AccuracyTable
+```
+
+#### Predict on the given (transformed) testing set using all models:
+```{r}
+pred_rf  <- predict(model_rf,  testing_Transformed[-26])
+pred_gbm <- predict(model_gbm, testing_Transformed[-26])
+pred_svm <- predict(model_svm, testing_Transformed[-26])
+pred_knn <- predict(model_knn, testing_Transformed[-26])
+
+pred_results <- data.frame(cbind(pred_rf, pred_svm, pred_knn, pred_gbm));
+names(pred_results) <- c("Random Forest", "SVM", "KNN", "Boosted Trees")
+
+pred_results[pred_results==1] <- "A"
+pred_results[pred_results==2] <- "B"
+pred_results[pred_results==3] <- "C"
+pred_results[pred_results==4] <- "D"
+pred_results[pred_results==5] <- "E"
+
+# Here are the final prediction results by method:
+kable(pred_results)
+
+# It appears that our model predictions agree most of the time!
+```
+
+
+
